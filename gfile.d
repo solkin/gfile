@@ -31,6 +31,7 @@ import gtk.FileChooserDialog;
 import gtk.Entry;
 import gtk.Frame;
 import gtk.SpinButton;
+import gtk.Spinner;
 import gobject.Type;
 import std.format;
 import std.string;
@@ -38,11 +39,24 @@ import std.conv;
 import std.path;
 import std.stdio;
 import std.file;
+import std.socket;
+import std.socketstream;
+import std.json;
+import std.parallelism;
+import std.algorithm;
+import core.thread;
 private import stdlib = core.stdc.stdlib : exit;
+
+__gshared Socket mainSocket = null;
+__gshared Socket dataSocket = null;
+__gshared SocketStream mainStream = null;
+__gshared SocketStream dataStream = null;
+__gshared ushort port = 3214;
 
 class GFile : MainWindow {
     
     Transaction[string] transactions;
+    string[] queue;
     Label StatusLbl;
     Toolbar toolbar;
     TreeView transfers;
@@ -141,7 +155,7 @@ class GFile : MainWindow {
     }
     
     public void onHost(MenuItem menuItem) {
-        new Host();
+        (new Thread(&onHostStart)).start();
     }
     
     public void onConnect(MenuItem menuItem) {
@@ -171,7 +185,24 @@ class GFile : MainWindow {
     }
     
     public void onPreferences(ToolButton toolButton) {
-        new Preferences();
+        // new Preferences();
+        JSONValue json = parseJSON(q"EOS
+{
+        "key" :
+        {
+                "subkey1" : "str_val",
+                "subkey2" : [1,2,3],
+                "subkey3" : 3.1415
+        }
+}
+EOS");
+        writeln(json.object["key"].object["subkey1"].str);
+        
+writeln(json.object["key"].object["subkey2"].array[1].integer);
+        writeln(json.object["key"].object["subkey3"].type == 
+JSON_TYPE.FLOAT);
+
+        queue ~= "String";
     }
     
     public Transaction getSelectedTransaction() {
@@ -190,6 +221,40 @@ class GFile : MainWindow {
     public void removeTransaction(Transaction transaction) {
         transaction.remove();
         transactions.remove(transaction.getPath());
+    }
+    
+    private void onHostStart() {
+        TcpSocket listener = new TcpSocket();
+		assert(listener.isAlive);
+		listener.bind(new InternetAddress(port));
+		listener.listen(2);
+		writeln("Waiting for connection...");
+        mainSocket = listener.accept();
+		writeln("Connected: " ~ to!string(mainSocket.remoteAddress()));
+		mainStream = new SocketStream(mainSocket);
+        (new Thread(&onParserStart)).start();
+        (new Thread(&onSenderStart)).start();
+    }
+    
+    public void onParserStart() {
+        string line;
+        while((line = to!string(mainStream.readLine())) !is null) {
+            writeln(line);
+        }
+        writeln("Parser finished");
+    }
+    
+    public void onSenderStart() {
+        string line;
+        while(true) {
+            Thread.sleep(dur!("seconds")( 1 ));
+            if(queue.length > 0) {
+                line = queue[0];
+                queue.remove(0);
+                writeln("Sending: " ~ line);
+                mainStream.writeLine(line);
+            }
+        }
     }
 }
 
@@ -253,27 +318,14 @@ string bytesizeToString(long bytes) {
     return writer.data;
 }
 
-class Host : Window
-{
-    
-    this()
-    {
-        super("Host");
-        setDefaultSize(320, 240);
-        showAll();
-    }
-}
-
-class Preferences : Window
-{
+class Preferences : Window {
     private SpinButton bufferSize;
     private SpinButton portNumber;
     private Entry pathEntry;
     private Entry prefixEntry;
     private CheckButton md5Check;
     
-    this()
-    {
+    this() {
         super("Preferences");
         setDefaultSize(320, 240);
         
@@ -323,8 +375,7 @@ class Preferences : Window
     }
 }
 
-void main(string[] args)
-{
+void main(string[] args) {
     Main.init(args);
     new GFile();
     Main.run();
