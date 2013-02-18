@@ -22,6 +22,7 @@ import std.json;
 import std.parallelism;
 import std.algorithm;
 import core.thread;
+import core.sync.semaphore;
 private import stdlib = core.stdc.stdlib : exit;
 
 __gshared Socket mainSocket = null;
@@ -34,6 +35,7 @@ class GFile : MainWindow {
     
     Transaction[string] transactions;
     string[] queue;
+	Semaphore queueSemaphore;
     Label StatusLbl;
     Toolbar toolbar;
     TreeView transfers;
@@ -163,7 +165,7 @@ class GFile : MainWindow {
     
     public void onPreferences(ToolButton toolButton) {
         // new Preferences();
-        JSONValue json = parseJSON(q"EOS
+        /*JSONValue json = parseJSON(q"EOS
 {
         "key" :
         {
@@ -177,9 +179,9 @@ EOS");
         
 writeln(json.object["key"].object["subkey2"].array[1].integer);
         writeln(json.object["key"].object["subkey3"].type == 
-JSON_TYPE.FLOAT);
+JSON_TYPE.FLOAT);*/
 
-        queue ~= "String";
+        sendPacket("Packet");
     }
     
     public Transaction getSelectedTransaction() {
@@ -220,17 +222,23 @@ JSON_TYPE.FLOAT);
         }
         writeln("Parser finished");
     }
+	
+	public void sendPacket(String packet) {
+		queue ~= packet;
+		queueSemaphore.notify();
+	}
     
     public void onSenderStart() {
         string line;
         while(true) {
-            Thread.sleep(dur!("seconds")( 1 ));
             if(queue.length > 0) {
                 line = queue[0];
-                queue.remove(0);
+                queue = queue[1..$];
                 writeln("Sending: " ~ line);
                 mainStream.writeLine(line);
-            }
+            } else {
+				queueSemaphore.wait();
+			}
         }
     }
 }
