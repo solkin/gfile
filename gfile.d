@@ -1,37 +1,14 @@
 pragma(lib, "gtkd-2"); // let ld find it in your path
 pragma(lib, "dl");   // gtkd depends on dl, so link it after
 
-import gtk.MainWindow;
-import gtk.Window;
-import gtk.Dialog;
-import gtk.AboutDialog;
-import gtk.Label;
-import gtk.Button;
-import gtk.CheckButton;
-import gtk.Box;
-import gtk.VBox;
-import gtk.Table;
-import gtk.Main;
-import gtk.Toolbar;
-import gtk.ToolButton;
-import gtk.Notebook;
-import gtk.ListStore;
-import gtk.TreeView;
-import gtk.CellRenderer;
-import gtk.CellRendererText;
-import gtk.CellRendererProgress;
-import gtk.ScrolledWindow;
-import gtk.TreeViewColumn;
-import gtk.TreeIter;
-import gtk.Menu;
-import gtk.MenuItem;
-import gtk.MenuToolButton;
-import gtk.SeparatorToolItem;
-import gtk.FileChooserDialog;
-import gtk.Entry;
-import gtk.Frame;
-import gtk.SpinButton;
-import gtk.Spinner;
+import gtk.MainWindow, gtk.Window, gtk.Dialog, gtk.AboutDialog,
+    gtk.Label, gtk.Button, gtk.CheckButton, gtk.Box, gtk.VBox,
+    gtk.Table, gtk.Main, gtk.Toolbar, gtk.ToolButton, gtk.Notebook,
+    gtk.ListStore, gtk.TreeView, gtk.CellRenderer, gtk.CellRendererText,
+    gtk.CellRendererProgress, gtk.ScrolledWindow, gtk.TreeViewColumn,
+    gtk.TreeIter, gtk.Menu, gtk.MenuItem, gtk.MenuToolButton,
+    gtk.SeparatorToolItem, gtk.FileChooserDialog, gtk.Entry, gtk.Frame,
+    gtk.SpinButton, gtk.Spinner;
 import gobject.Type;
 import std.format;
 import std.string;
