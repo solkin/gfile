@@ -29,17 +29,19 @@ __gshared Socket mainSocket = null;
 __gshared Socket dataSocket = null;
 __gshared SocketStream mainStream = null;
 __gshared SocketStream dataStream = null;
-__gshared ushort port = 3214;
+__gshared string host = "localhost";
+__gshared ushort port = 3216;
 
 class GFile : MainWindow {
     
     Transaction[string] transactions;
-    string[] queue;
-	Semaphore queueSemaphore;
     Label StatusLbl;
     Toolbar toolbar;
     TreeView transfers;
     ListStore listStore;
+    // Outgoing
+    string[] queue;
+	Semaphore queueSemaphore;
     
     this() {
         super("GFile");
@@ -138,7 +140,7 @@ class GFile : MainWindow {
     }
     
     public void onConnect(MenuItem menuItem) {
-        
+        (new Thread(&onClientStart)).start();
     }
     
     public void onFile(ToolButton toolButton) {
@@ -202,6 +204,13 @@ JSON_TYPE.FLOAT);*/
         transactions.remove(transaction.getPath());
     }
     
+    private void onClientStart() {
+        writeln("Connecting...");
+		mainSocket = new TcpSocket(new InternetAddress(host, port));
+		writeln("Connected.");
+		mainStream = new SocketStream(mainSocket);
+    }
+    
     private void onHostStart() {
         TcpSocket listener = new TcpSocket();
 		assert(listener.isAlive);
@@ -217,29 +226,57 @@ JSON_TYPE.FLOAT);*/
     
     public void onParserStart() {
         string line;
-        while((line = to!string(mainStream.readLine())) !is null) {
-            writeln(line);
+        ulong length;
+        try { 
+            while(mainStream.isOpen()) {
+                mainStream.read(length);
+                line = to!string(mainStream.readString(length));
+                writeln(line);
+            }
+        } catch (std.stream.ReadException e) {
+            writeln("Error in parser");
         }
+        stopSender();
         writeln("Parser finished");
     }
 	
-	public void sendPacket(String packet) {
+	public void sendPacket(string packet) {
 		queue ~= packet;
 		queueSemaphore.notify();
 	}
     
-    public void onSenderStart() {
-        string line;
-        while(true) {
-            if(queue.length > 0) {
-                line = queue[0];
-                queue = queue[1..$];
-                writeln("Sending: " ~ line);
-                mainStream.writeLine(line);
-            } else {
-				queueSemaphore.wait();
-			}
+    public void initSender() {
+        queue = new string[0];
+        if(queueSemaphore is null) {
+            queueSemaphore = new Semaphore(1);
         }
+    }
+    
+    public void stopSender() {
+        queueSemaphore.notify();
+    }
+    
+    public void onSenderStart() {
+        initSender();
+        ulong length;
+        string line;
+        try {
+            while(mainStream.isOpen()) {
+                if(queue.length > 0) {
+                    line = queue[0];
+                    length = line.length;
+                    queue = queue[1..$];
+                    writeln("Sending: " ~ line);
+                    mainStream.write(length);
+                    mainStream.writeString(line);
+                } else {
+                    queueSemaphore.wait();
+                }
+            }
+        } catch(std.stream.WriteException e) {
+            writeln("Error in sender");
+        }
+        writeln("Sender finished");
     }
 }
 
