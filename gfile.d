@@ -149,11 +149,10 @@ class GFile : MainWindow {
     }
     
     public void onConnectButton(ToolButton toolButton) {
-        // (new Thread(&onClientStart)).start();
         if(connected) {
-            afterConnection();
+            disconnect();
         } else {
-            afterDisconnection();
+            (new Thread(&onClientStart)).start();
         }
     }
     
@@ -235,6 +234,12 @@ JSON_TYPE.FLOAT);*/
         (new Thread(&onSenderStart)).start();
     }
     
+    private void disconnect() {
+		mainSocket.shutdown(SocketShutdown.BOTH);
+		mainSocket.close();
+		stopSender();
+	}
+    
     private void onClientStart() {
         writeln("Connecting...");
 		mainSocket = new TcpSocket(new InternetAddress(host, port));
@@ -271,7 +276,6 @@ JSON_TYPE.FLOAT);*/
         }
         writeln("Parser finished");
         stopSender();
-        afterDisconnection();
     }
 	
 	public void sendPacket(string packet) {
@@ -287,6 +291,7 @@ JSON_TYPE.FLOAT);*/
     }
     
     private void stopSender() {
+		connected = false;
         queueSemaphore.notify();
     }
     
@@ -295,7 +300,7 @@ JSON_TYPE.FLOAT);*/
         ulong length;
         string line;
         try {
-            while(mainStream.isOpen()) {
+            while(mainStream.isOpen() && connected) {
                 if(queue.length > 0) {
                     line = queue[0];
                     length = line.length;
@@ -311,6 +316,8 @@ JSON_TYPE.FLOAT);*/
             writeln("Error in sender");
         }
         writeln("Sender finished");
+        connected = false;
+        afterDisconnection();
     }
 }
 
