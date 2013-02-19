@@ -34,11 +34,14 @@ __gshared ushort port = 3216;
 
 class GFile : MainWindow {
     
+    Menu menu;
+    MenuToolButton connectButton;
     Transaction[string] transactions;
     Label StatusLbl;
     Toolbar toolbar;
     TreeView transfers;
     ListStore listStore;
+    bool connected;
     // Outgoing
     string[] queue;
 	Semaphore queueSemaphore;
@@ -68,16 +71,18 @@ class GFile : MainWindow {
         toolbar = new Toolbar();
         toolbar.getStyleContext().addClass("primary-toolbar");
         
-        Menu menu = new Menu();
+        connected = false;
+        menu = new Menu();
         MenuItem host_menu_item = new MenuItem(&onHost, "Host");
         menu.add(host_menu_item);
         MenuItem connect_menu_item = new MenuItem(&onConnect, "Connect");
         menu.add(connect_menu_item);
         menu.showAll();
         /** Connect button **/
-        MenuToolButton connect_button = new MenuToolButton (StockID.CONNECT);
-        connect_button.setMenu(menu);
-        toolbar.add (connect_button);
+        connectButton = new MenuToolButton (StockID.CONNECT);
+        connectButton.addOnClicked(&onConnectButton);
+        connectButton.setMenu(menu);
+        toolbar.add (connectButton);
         
         ToolButton infoButton = new ToolButton(StockID.INFO);
         toolbar.add(infoButton);
@@ -143,6 +148,27 @@ class GFile : MainWindow {
         (new Thread(&onClientStart)).start();
     }
     
+    public void onConnectButton(ToolButton toolButton) {
+        // (new Thread(&onClientStart)).start();
+        if(connected) {
+            afterConnection();
+        } else {
+            afterDisconnection();
+        }
+    }
+    
+    public void afterConnection() {
+        connectButton.setStockId("gtk-disconnect");
+        connectButton.setMenu(null);
+        connected = true;
+    }
+    
+    public void afterDisconnection() {
+        connectButton.setStockId("gtk-connect");
+        connectButton.setMenu(menu);
+        connected = false;
+    }
+    
     public void onFile(ToolButton toolButton) {
         FileChooserDialog fileChooser = new FileChooserDialog (
             "Open File", this, FileChooserAction.OPEN,
@@ -183,7 +209,7 @@ writeln(json.object["key"].object["subkey2"].array[1].integer);
         writeln(json.object["key"].object["subkey3"].type == 
 JSON_TYPE.FLOAT);*/
 
-        sendPacket("Packet");
+        sendPacket("{\"type : \"hello\", \"client : \"gfile\", \"protocol\" : \"1.0\"}");
     }
     
     public Transaction getSelectedTransaction() {
@@ -204,11 +230,18 @@ JSON_TYPE.FLOAT);*/
         transactions.remove(transaction.getPath());
     }
     
+    private void startStreams() {
+        (new Thread(&onParserStart)).start();
+        (new Thread(&onSenderStart)).start();
+    }
+    
     private void onClientStart() {
         writeln("Connecting...");
 		mainSocket = new TcpSocket(new InternetAddress(host, port));
 		writeln("Connected.");
 		mainStream = new SocketStream(mainSocket);
+        startStreams();
+        afterConnection();
     }
     
     private void onHostStart() {
@@ -220,24 +253,25 @@ JSON_TYPE.FLOAT);*/
         mainSocket = listener.accept();
 		writeln("Connected: " ~ to!string(mainSocket.remoteAddress()));
 		mainStream = new SocketStream(mainSocket);
-        (new Thread(&onParserStart)).start();
-        (new Thread(&onSenderStart)).start();
+        startStreams();
+        afterConnection();
     }
     
-    public void onParserStart() {
+    private void onParserStart() {
         string line;
         ulong length;
         try { 
             while(mainStream.isOpen()) {
                 mainStream.read(length);
                 line = to!string(mainStream.readString(length));
-                writeln(line);
+                writeln("Received: " ~ line);
             }
         } catch (std.stream.ReadException e) {
             writeln("Error in parser");
         }
-        stopSender();
         writeln("Parser finished");
+        stopSender();
+        afterDisconnection();
     }
 	
 	public void sendPacket(string packet) {
@@ -245,18 +279,18 @@ JSON_TYPE.FLOAT);*/
 		queueSemaphore.notify();
 	}
     
-    public void initSender() {
+    private void initSender() {
         queue = new string[0];
         if(queueSemaphore is null) {
             queueSemaphore = new Semaphore(1);
         }
     }
     
-    public void stopSender() {
+    private void stopSender() {
         queueSemaphore.notify();
     }
     
-    public void onSenderStart() {
+    private void onSenderStart() {
         initSender();
         ulong length;
         string line;
