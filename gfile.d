@@ -30,7 +30,7 @@ __gshared Socket dataSocket = null;
 __gshared SocketStream mainStream = null;
 __gshared SocketStream dataStream = null;
 __gshared string host = "localhost";
-__gshared ushort port = 3214;
+__gshared ushort port = 3215;
 
 class GFile : MainWindow {
     
@@ -192,6 +192,14 @@ class GFile : MainWindow {
     
     public void onPreferences(ToolButton toolButton) {
         // new Preferences();
+        /*JSONValue json1 = void;
+        json1.type = JSON_TYPE.STRING;
+        json1.str = "value";
+        JSONValue json0 = void;
+        json0.type = JSON_TYPE.OBJECT;
+        json0.str = "strrrr";
+        json0.object["fttt"] = json1;
+        writeln(toJSON(&json1));*/
         /*JSONValue json = parseJSON(q"EOS
 {
         "key" :
@@ -207,8 +215,11 @@ EOS");
 writeln(json.object["key"].object["subkey2"].array[1].integer);
         writeln(json.object["key"].object["subkey3"].type == 
 JSON_TYPE.FLOAT);*/
-
-        sendPacket("{\"type : \"hello\", \"client : \"gfile\", \"protocol\" : \"1.0\"}");
+		string fileName = "file.txt";
+		ulong fileSize = 1000000;
+		parseLine("{\"type : \"file\", \"action : \"append\", \"name : \"" 
+			~ fileName ~ "\", \"size\" : \"" ~ to!string(fileSize) ~ "}");
+        // sendPacket("{\"type : \"hello\", \"client : \"gfile\", \"protocol\" : \"1.0\"}");
     }
     
     public Transaction getSelectedTransaction() {
@@ -273,6 +284,7 @@ JSON_TYPE.FLOAT);*/
                 mainStream.read(length);
                 line = to!string(mainStream.readString(length));
                 writeln("Received: " ~ line);
+                parseLine(line);
             }
         } catch (std.stream.ReadException e) {
             writeln("Error in parser");
@@ -322,6 +334,36 @@ JSON_TYPE.FLOAT);*/
         connected = false;
         afterDisconnection();
     }
+    
+    public void parseLine(string line) {
+		writeln("Parse: " ~ line);
+		JSONValue json = parseJSON(line);
+		string type = json["type"].str;
+		writeln("Type: " ~ type);
+		switch(type) {
+			case "file": {
+				string action = json["action"].str;
+				switch(action) {
+					case "append": {
+						string name = json["name"].str;
+						ulong size = json["size"].uinteger;
+						Transaction transaction = new Transaction(
+							listStore, name, size);
+							writeln("File accepted: " ~ name ~ " size: " ~ to!string(size));
+						appendTransaction(transaction);
+						break;
+					}
+					default: {
+						writeln("Unknown file operation");
+					}
+				}
+				break;
+			}
+			default: {
+				writeln("Unknown packet type: " ~ type);
+			}
+		}
+	}
     
     public void sendHello() {
         sendPacket("{\"type : \"hello\", \"client : \"gfile\", \"protocol\" : \"1.0\"}");
