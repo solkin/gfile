@@ -30,7 +30,7 @@ __gshared Socket dataSocket = null;
 __gshared SocketStream mainStream = null;
 __gshared SocketStream dataStream = null;
 __gshared string host = "localhost";
-__gshared ushort port = 3216;
+__gshared ushort port = 3214;
 
 class GFile : MainWindow {
     
@@ -222,6 +222,7 @@ JSON_TYPE.FLOAT);*/
     
     public void appendTransaction(Transaction transaction) {
         transactions[transaction.getPath()] = transaction;
+        sendAppendFile(transaction.getName(), transaction.getSize());
     }
     
     public void removeTransaction(Transaction transaction) {
@@ -245,8 +246,9 @@ JSON_TYPE.FLOAT);*/
 		mainSocket = new TcpSocket(new InternetAddress(host, port));
 		writeln("Connected.");
 		mainStream = new SocketStream(mainSocket);
-        startStreams();
         afterConnection();
+        startStreams();
+        // sendHello();
     }
     
     private void onHostStart() {
@@ -258,8 +260,9 @@ JSON_TYPE.FLOAT);*/
         mainSocket = listener.accept();
 		writeln("Connected: " ~ to!string(mainSocket.remoteAddress()));
 		mainStream = new SocketStream(mainSocket);
-        startStreams();
         afterConnection();
+        startStreams();
+        // sendHello();
     }
     
     private void onParserStart() {
@@ -319,6 +322,20 @@ JSON_TYPE.FLOAT);*/
         connected = false;
         afterDisconnection();
     }
+    
+    public void sendHello() {
+        sendPacket("{\"type : \"hello\", \"client : \"gfile\", \"protocol\" : \"1.0\"}");
+    }
+    
+    public void sendAppendFile(string fileName, ulong fileSize) {
+        sendPacket("{\"type : \"file\", \"action : \"append\", \"name : \"" 
+        ~ fileName ~ "\", \"size\" : \"" ~ to!string(fileSize) ~ "}");
+    }
+    
+    public void sendRemoveFile(string fileName, ulong fileSize) {
+        sendPacket("{\"type : \"file\", \"action : \"remove\", \"name : \"" 
+        ~ fileName ~ "\", \"size\" : \"" ~ to!string(fileSize) ~ "}");
+    }
 }
 
 class Transaction {
@@ -327,10 +344,10 @@ class Transaction {
     private ListStore listStore;
     private string filePath;
     private string fileName;
-    private long fileSize;
+    private ulong fileSize;
     private int percent;
     
-    this(ListStore listStore, string filePath, long fileSize) {
+    this(ListStore listStore, string filePath, ulong fileSize) {
         iter = new TreeIter();
         this.listStore = listStore;
         
@@ -345,6 +362,14 @@ class Transaction {
     
     public string getPath() {
         return filePath;
+    }
+    
+    public string getName() {
+        return fileName;
+    }
+    
+    public ulong getSize() {
+        return fileSize;
     }
     
     public void remove() {
@@ -366,7 +391,7 @@ class Transaction {
     }
 }
 
-string bytesizeToString(long bytes) {
+string bytesizeToString(ulong bytes) {
     if (bytes < 1024) {
         return to!string(bytes) ~ " bytes";
     }
