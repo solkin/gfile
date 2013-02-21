@@ -21,6 +21,7 @@ import std.socketstream;
 import std.json;
 import std.parallelism;
 import std.algorithm;
+import std.digest.md;
 import core.thread;
 import core.sync.semaphore;
 private import stdlib = core.stdc.stdlib : exit;
@@ -30,7 +31,7 @@ __gshared Socket dataSocket = null;
 __gshared SocketStream mainStream = null;
 __gshared SocketStream dataStream = null;
 __gshared string host = "localhost";
-__gshared ushort port = 3215;
+__gshared ushort port = 3216;
 
 class GFile : MainWindow {
     
@@ -176,9 +177,12 @@ class GFile : MainWindow {
         if (fileChooser.run () == -3) {
             string filePath = fileChooser.getFilename ();
             File file = File(filePath, "r");
+            ulong fileSize = file.size();
+            string fileMd5 = checkMd5(file);
+            file.close();
             // Adding transaction
-            Transaction transaction = new Transaction(listStore, filePath, file.size());
-            appendTransaction(transaction);
+            Transaction transaction = new Transaction(listStore, filePath, fileSize, fileMd5);
+            appendTransaction(transaction, true);
         }
         fileChooser.destroy();
     }
@@ -186,7 +190,7 @@ class GFile : MainWindow {
     public void onDelete(ToolButton toolButton) {
         Transaction transaction = getSelectedTransaction();
         if(transaction !is null) {
-            removeTransaction(transaction);
+            removeTransaction(transaction, true);
         }
     }
     
@@ -217,8 +221,8 @@ writeln(json.object["key"].object["subkey2"].array[1].integer);
 JSON_TYPE.FLOAT);*/
 		string fileName = "file.txt";
 		ulong fileSize = 1000000;
-		parseLine("{\"type : \"file\", \"action : \"append\", \"name : \"" 
-			~ fileName ~ "\", \"size\" : \"" ~ to!string(fileSize) ~ "}");
+		parseLine("{\"type\" : \"file\", \"action\" : \"append\", \"name\" : \"" 
+        ~ fileName ~ "\", \"size\" : " ~ to!string(fileSize) ~ "}");
         // sendPacket("{\"type : \"hello\", \"client : \"gfile\", \"protocol\" : \"1.0\"}");
     }
     
@@ -231,14 +235,21 @@ JSON_TYPE.FLOAT);*/
         return null;
     }
     
-    public void appendTransaction(Transaction transaction) {
+    public void appendTransaction(Transaction transaction, 
+        bool isSendRequest) {
         transactions[transaction.getPath()] = transaction;
-        sendAppendFile(transaction.getName(), transaction.getSize());
+        if(isSendRequest) {
+            sendAppendFile(transaction.getName(), transaction.getSize());
+        }
     }
     
-    public void removeTransaction(Transaction transaction) {
+    public void removeTransaction(Transaction transaction,
+        bool isSendRequest) {
         transaction.remove();
         transactions.remove(transaction.getPath());
+        if(isSendRequest) {
+            sendRemoveFile(transaction.getName(), transaction.getSize());
+        }
     }
     
     private void startStreams() {
@@ -343,16 +354,30 @@ JSON_TYPE.FLOAT);*/
 		switch(type) {
 			case "file": {
 				string action = json["action"].str;
+                string fileMd5 = json["md5"].str;
 				switch(action) {
 					case "append": {
-						string name = json["name"].str;
-						ulong size = json["size"].uinteger;
+                        string name = json["name"].str;
+                        ulong size = json["size"].uinteger;
 						Transaction transaction = new Transaction(
-							listStore, name, size);
-							writeln("File accepted: " ~ name ~ " size: " ~ to!string(size));
-						appendTransaction(transaction);
+							listStore, name, size, fileMd5);
+						writeln("File accepted: " ~ name ~ " size: " ~ to!string(size));
+						appendTransaction(transaction, false);
 						break;
 					}
+                    case "remove": {
+                        Transaction transaction = transactions[fileMd5];
+                        if(transaction !is null) {
+                            writeln("File removed: " 
+                                ~ transaction.getName() 
+                                ~ " size: " 
+                                ~ to!string(transaction.getSize()));
+                            removeTransaction(transaction, false);
+                        } else {
+                            writeln("No file with MD5: " ~ fileMd5);
+                        }
+                        break;
+                    }
 					default: {
 						writeln("Unknown file operation");
 					}
@@ -366,17 +391,18 @@ JSON_TYPE.FLOAT);*/
 	}
     
     public void sendHello() {
-        sendPacket("{\"type : \"hello\", \"client : \"gfile\", \"protocol\" : \"1.0\"}");
+        sendPacket("{\"type\" : \"hello\", \"client\" : \"gfile\", \"protocol\" : \"1.0\"}");
     }
     
-    public void sendAppendFile(string fileName, ulong fileSize) {
-        sendPacket("{\"type : \"file\", \"action : \"append\", \"name : \"" 
-        ~ fileName ~ "\", \"size\" : \"" ~ to!string(fileSize) ~ "}");
+    public void sendAppendFile(string fileName, ulong fileSize, string fileMd5) {
+        sendPacket("{\"type\" : \"file\", \"action\" : \"append\", \"name\" : \"" 
+        ~ fileName ~ "\", \"size\" : " ~ to!string(fileSize) ~ "}");
     }
     
-    public void sendRemoveFile(string fileName, ulong fileSize) {
-        sendPacket("{\"type : \"file\", \"action : \"remove\", \"name : \"" 
-        ~ fileName ~ "\", \"size\" : \"" ~ to!string(fileSize) ~ "}");
+    public void sendRemoveFile(string fileName, ulong fileSize, string fileMd5) {
+        sendPacket("{\"type\" : \"file\", \"action\" : \"remove\", \"name\" : \"" 
+            ~ fileName ~ "\", \"size\" : " ~ to!string(fileSize) 
+            ~ " \"md5\" : \""~fileMd5~"\"" ~ "}");
     }
 }
 
@@ -387,9 +413,10 @@ class Transaction {
     private string filePath;
     private string fileName;
     private ulong fileSize;
+    private string fileMd5;
     private int percent;
     
-    this(ListStore listStore, string filePath, ulong fileSize) {
+    this(ListStore listStore, string filePath, ulong fileSize, string fileMd5) {
         iter = new TreeIter();
         this.listStore = listStore;
         
@@ -398,6 +425,7 @@ class Transaction {
         this.filePath = filePath;
         this.fileName = baseName(filePath);
         this.fileSize = fileSize;
+        this.fileMd5 = fileMd5;
         
         updateIter();
     }
@@ -412,6 +440,10 @@ class Transaction {
     
     public ulong getSize() {
         return fileSize;
+    }
+    
+    public string getMd5() {
+        return fileMd5;
     }
     
     public void remove() {
@@ -446,6 +478,17 @@ string bytesizeToString(ulong bytes) {
         formattedWrite(writer, "%.1f GiB", cast(double)(bytes) / (1024 * 1024 * 1024));
     }
     return writer.data;
+}
+
+string checkMd5(File file) {
+    MD5 md5;
+    md5.start();
+    int blockSize = 1024*1024;
+    foreach (ubyte[] block; file.byChunk(blockSize)) {
+        md5.put(block);
+    }
+    string md5str = toHexString(md5.finish());
+    return md5str.toLower();
 }
 
 class Preferences : Window {
