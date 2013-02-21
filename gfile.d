@@ -32,6 +32,7 @@ __gshared SocketStream mainStream = null;
 __gshared SocketStream dataStream = null;
 __gshared string host = "localhost";
 __gshared ushort port = 3216;
+__gshared string incomingFolder = "~/";
 
 class GFile : MainWindow {
     
@@ -112,7 +113,8 @@ class GFile : MainWindow {
         // File percent (value)
         // File path (hidden)
         // File size in bytes (hidden)
-        GType[] model = [GType.STRING, GType.STRING, GType.STRING, GType.INT, GType.STRING, GType.STRING];
+        // File MD5
+        GType[] model = [GType.STRING, GType.STRING, GType.STRING, GType.INT, GType.STRING, GType.STRING, GType.STRING];
         // Model
         listStore = new ListStore (model);
         // View
@@ -221,34 +223,38 @@ writeln(json.object["key"].object["subkey2"].array[1].integer);
 JSON_TYPE.FLOAT);*/
 		string fileName = "file.txt";
 		ulong fileSize = 1000000;
+		string fileMd5 = "md5md5md5";
 		parseLine("{\"type\" : \"file\", \"action\" : \"append\", \"name\" : \"" 
-        ~ fileName ~ "\", \"size\" : " ~ to!string(fileSize) ~ "}");
+			~ fileName ~ "\", \"size\" : " ~ to!string(fileSize) 
+			~ ", \"md5\" : \"" ~ fileMd5 ~ "\"}");
         // sendPacket("{\"type : \"hello\", \"client : \"gfile\", \"protocol\" : \"1.0\"}");
     }
     
     public Transaction getSelectedTransaction() {
         TreeIter iter = transfers.getSelectedIter();
         if(iter !is null) {
-            string filePath = listStore.getValue(iter, 4).getString();
-            return transactions[filePath];
+            string fileMd5 = listStore.getValue(iter, 6).getString();
+            return transactions[fileMd5];
         }
         return null;
     }
     
     public void appendTransaction(Transaction transaction, 
         bool isSendRequest) {
-        transactions[transaction.getPath()] = transaction;
+        transactions[transaction.getMd5()] = transaction;
         if(isSendRequest) {
-            sendAppendFile(transaction.getName(), transaction.getSize());
+            sendAppendFile(transaction.getName(), transaction.getSize(),
+				transaction.getMd5());
         }
     }
     
     public void removeTransaction(Transaction transaction,
         bool isSendRequest) {
         transaction.remove();
-        transactions.remove(transaction.getPath());
+        transactions.remove(transaction.getMd5());
         if(isSendRequest) {
-            sendRemoveFile(transaction.getName(), transaction.getSize());
+            sendRemoveFile(transaction.getName(), transaction.getSize(),
+				transaction.getMd5());
         }
     }
     
@@ -354,19 +360,19 @@ JSON_TYPE.FLOAT);*/
 		switch(type) {
 			case "file": {
 				string action = json["action"].str;
-                string fileMd5 = json["md5"].str;
+                string md5 = json["md5"].str;
 				switch(action) {
 					case "append": {
                         string name = json["name"].str;
                         ulong size = json["size"].uinteger;
 						Transaction transaction = new Transaction(
-							listStore, name, size, fileMd5);
+							listStore, incomingFolder, name, size, md5);
 						writeln("File accepted: " ~ name ~ " size: " ~ to!string(size));
 						appendTransaction(transaction, false);
 						break;
 					}
                     case "remove": {
-                        Transaction transaction = transactions[fileMd5];
+                        Transaction transaction = transactions[md5];
                         if(transaction !is null) {
                             writeln("File removed: " 
                                 ~ transaction.getName() 
@@ -374,7 +380,7 @@ JSON_TYPE.FLOAT);*/
                                 ~ to!string(transaction.getSize()));
                             removeTransaction(transaction, false);
                         } else {
-                            writeln("No file with MD5: " ~ fileMd5);
+                            writeln("No file with MD5: " ~ md5);
                         }
                         break;
                     }
@@ -396,13 +402,14 @@ JSON_TYPE.FLOAT);*/
     
     public void sendAppendFile(string fileName, ulong fileSize, string fileMd5) {
         sendPacket("{\"type\" : \"file\", \"action\" : \"append\", \"name\" : \"" 
-        ~ fileName ~ "\", \"size\" : " ~ to!string(fileSize) ~ "}");
+			~ fileName ~ "\", \"size\" : " ~ to!string(fileSize) 
+			~ ", \"md5\" : \"" ~ fileMd5 ~ "\"}");
     }
     
     public void sendRemoveFile(string fileName, ulong fileSize, string fileMd5) {
         sendPacket("{\"type\" : \"file\", \"action\" : \"remove\", \"name\" : \"" 
             ~ fileName ~ "\", \"size\" : " ~ to!string(fileSize) 
-            ~ " \"md5\" : \""~fileMd5~"\"" ~ "}");
+            ~ ", \"md5\" : \"" ~ fileMd5 ~ "\"}");
     }
 }
 
@@ -415,6 +422,11 @@ class Transaction {
     private ulong fileSize;
     private string fileMd5;
     private int percent;
+    
+    this(ListStore listStore, string fileDir, string fileName, 
+			ulong fileSize, string fileMd5) {
+		this(listStore, buildPath(fileDir, fileName), fileSize, fileMd5);
+	}
     
     this(ListStore listStore, string filePath, ulong fileSize, string fileMd5) {
         iter = new TreeIter();
@@ -462,6 +474,7 @@ class Transaction {
         listStore.setValue(iter, 3, percent);
         listStore.setValue(iter, 4, filePath);
         listStore.setValue(iter, 5, to!string(fileSize));
+        listStore.setValue(iter, 6, fileMd5);
     }
 }
 
