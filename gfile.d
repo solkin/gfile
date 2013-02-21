@@ -253,8 +253,7 @@ JSON_TYPE.FLOAT);*/
         transaction.remove();
         transactions.remove(transaction.getMd5());
         if(isSendRequest) {
-            sendRemoveFile(transaction.getName(), transaction.getSize(),
-				transaction.getMd5());
+            sendRemoveFile(transaction.getMd5());
         }
     }
     
@@ -406,10 +405,8 @@ JSON_TYPE.FLOAT);*/
 			~ ", \"md5\" : \"" ~ fileMd5 ~ "\"}");
     }
     
-    public void sendRemoveFile(string fileName, ulong fileSize, string fileMd5) {
-        sendPacket("{\"type\" : \"file\", \"action\" : \"remove\", \"name\" : \"" 
-            ~ fileName ~ "\", \"size\" : " ~ to!string(fileSize) 
-            ~ ", \"md5\" : \"" ~ fileMd5 ~ "\"}");
+    public void sendRemoveFile(string fileMd5) {
+        sendPacket("{\"type\" : \"file\", \"action\" : \"remove\", \"md5\" : \"" ~ fileMd5 ~ "\"}");
     }
 }
 
